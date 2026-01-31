@@ -1,6 +1,7 @@
 """CLI commands for MailClean."""
 
 import sys
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -629,6 +630,87 @@ def trash_list():
         )
 
     console.print(table)
+
+
+# Top senders command
+@cli.command('top')
+@click.option('--folder', '-f', default='INBOX', help='Folder to analyze')
+@click.option('--limit', '-l', default=20, help='Number of top senders to show')
+@click.option('--query', '-q', default=None, help='Optional query to filter emails first')
+@click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
+def top(folder: str, limit: int, query: Optional[str], scrub: bool):
+    """Show top senders by email count."""
+    config, account, password = get_client_from_config()
+
+    # Parse query if provided
+    criterion = None
+    needs_body = False
+    if query:
+        try:
+            criterion = parse_query(query)
+            needs_body = query_requires_body(query)
+        except ParseError as e:
+            console.print(f"[red]Invalid query: {e.message}[/red]")
+            return
+
+    client = IMAPClient(account.server, account.port, account.email, password)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Fetching emails...", total=None)
+
+        try:
+            with client.connection():
+                client.select_folder(folder)
+                uids = client.search_uids('ALL')
+
+                progress.update(task, description=f"Analyzing {len(uids)} emails...")
+
+                # Count by sender
+                sender_counts: Counter[str] = Counter()
+                for email_msg in client.fetch_emails(uids, include_body=needs_body):
+                    # Apply query filter if provided
+                    if criterion:
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if not criterion.matches(match_target):
+                            continue
+
+                    sender_counts[email_msg.from_address] += 1
+        except IMAPError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            return
+
+    if not sender_counts:
+        console.print("[yellow]No emails found.[/yellow]")
+        return
+
+    total_emails = sum(sender_counts.values())
+    top_senders = sender_counts.most_common(limit)
+
+    table = Table(title=f"Top {len(top_senders)} Senders in {folder} ({total_emails} total emails)")
+    table.add_column("#", style="dim", justify="right")
+    table.add_column("Count", style="cyan", justify="right")
+    table.add_column("%", style="magenta", justify="right")
+    table.add_column("Sender", style="green")
+
+    for rank, (sender, count) in enumerate(top_senders, 1):
+        pct = (count / total_emails) * 100
+        table.add_row(
+            str(rank),
+            str(count),
+            f"{pct:.1f}%",
+            sender,
+        )
+
+    console.print(table)
+
+    # Show summary
+    top_total = sum(count for _, count in top_senders)
+    top_pct = (top_total / total_emails) * 100
+    console.print(f"\n[dim]Top {len(top_senders)} senders account for {top_total} emails ({top_pct:.1f}% of total)[/dim]")
 
 
 # Export command
