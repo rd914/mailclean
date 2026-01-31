@@ -5,6 +5,7 @@ import email.header
 import email.utils
 import imaplib
 import re
+import socket
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Generator, Iterator, Optional
@@ -42,8 +43,26 @@ class IMAPClient:
                 self._connection = imaplib.IMAP4(self.server, self.port)
 
             self._connection.login(self.email_addr, self.password)
+        except ConnectionRefusedError:
+            raise IMAPError(
+                f"Connection refused by {self.server}:{self.port}. "
+                "Check that the server address and port are correct, "
+                "and that no firewall is blocking the connection."
+            )
+        except socket.timeout:
+            raise IMAPError(
+                f"Connection to {self.server}:{self.port} timed out. "
+                "The server may be down or unreachable."
+            )
+        except socket.gaierror as e:
+            raise IMAPError(
+                f"Could not resolve server address '{self.server}': {e}. "
+                "Check that the server name is spelled correctly."
+            )
+        except OSError as e:
+            raise IMAPError(f"Network error connecting to {self.server}:{self.port}: {e}")
         except imaplib.IMAP4.error as e:
-            raise IMAPError(f"Failed to connect: {e}") from e
+            raise IMAPError(f"IMAP authentication failed: {e}") from e
 
     def disconnect(self) -> None:
         """Close the IMAP connection."""
@@ -335,19 +354,21 @@ class IMAPClient:
         return ''.join(decoded_parts)
 
     def _parse_address(self, addr_str: str) -> str:
-        """Parse a single email address."""
+        """Parse a single email address, preserving the display name."""
         if not addr_str:
             return ''
 
         # Decode if MIME-encoded
         decoded = self._decode_header(addr_str)
 
-        # Extract just the email address
+        # Parse into name and address components
         name, addr = email.utils.parseaddr(decoded)
+        if name and addr:
+            return f'{name} <{addr}>'
         return addr if addr else decoded
 
     def _parse_address_list(self, addr_str: str) -> list[str]:
-        """Parse a comma-separated list of email addresses."""
+        """Parse a comma-separated list of email addresses, preserving display names."""
         if not addr_str:
             return []
 
@@ -356,7 +377,10 @@ class IMAPClient:
 
         for name, addr in email.utils.getaddresses([decoded]):
             if addr:
-                addresses.append(addr)
+                if name:
+                    addresses.append(f'{name} <{addr}>')
+                else:
+                    addresses.append(addr)
 
         return addresses
 

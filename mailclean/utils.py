@@ -1,7 +1,7 @@
 """Utility functions for date parsing and helpers."""
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from dateutil import parser as date_parser
@@ -28,7 +28,7 @@ def parse_relative_date(relative_str: str) -> Optional[datetime]:
     amount = int(match.group(1))
     unit = match.group(2)
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
 
     if unit == 'd':
         return now - timedelta(days=amount)

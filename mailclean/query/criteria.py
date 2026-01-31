@@ -25,6 +25,11 @@ class Criterion(ABC):
         """Check if the email matches this criterion."""
         pass
 
+    @property
+    def requires_body(self) -> bool:
+        """Return True if this criterion needs email body content."""
+        return False
+
     @abstractmethod
     def __repr__(self) -> str:
         pass
@@ -231,6 +236,10 @@ class BodyCriterion(Criterion):
             return False
         return bool(self.regex.search(email.body))
 
+    @property
+    def requires_body(self) -> bool:
+        return True
+
     def __repr__(self) -> str:
         return f"Body({self.pattern_str!r})"
 
@@ -244,6 +253,10 @@ class AndCriterion(Criterion):
 
     def matches(self, email: 'EmailMessage') -> bool:
         return self.left.matches(email) and self.right.matches(email)
+
+    @property
+    def requires_body(self) -> bool:
+        return self.left.requires_body or self.right.requires_body
 
     def __repr__(self) -> str:
         return f"And({self.left!r}, {self.right!r})"
@@ -259,6 +272,10 @@ class OrCriterion(Criterion):
     def matches(self, email: 'EmailMessage') -> bool:
         return self.left.matches(email) or self.right.matches(email)
 
+    @property
+    def requires_body(self) -> bool:
+        return self.left.requires_body or self.right.requires_body
+
     def __repr__(self) -> str:
         return f"Or({self.left!r}, {self.right!r})"
 
@@ -271,6 +288,10 @@ class NotCriterion(Criterion):
 
     def matches(self, email: 'EmailMessage') -> bool:
         return not self.criterion.matches(email)
+
+    @property
+    def requires_body(self) -> bool:
+        return self.criterion.requires_body
 
     def __repr__(self) -> str:
         return f"Not({self.criterion!r})"

@@ -13,6 +13,7 @@ from rich.prompt import Prompt, Confirm
 from .config import Config, Account, KNOWN_PROVIDERS
 from .imap_client import IMAPClient, IMAPError, MAILCLEAN_DELETED_FOLDER
 from .query.parser import parse_query, ParseError
+from .query.evaluator import query_requires_body
 from .export import export_to_csv, export_to_json
 
 console = Console()
@@ -193,6 +194,7 @@ def search(query: str, folder: str, limit: int):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
+    needs_body = query_requires_body(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     with Progress(
@@ -211,7 +213,7 @@ def search(query: str, folder: str, limit: int):
 
                 # Fetch and filter emails
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=False):
+                for email_msg in client.fetch_emails(uids, include_body=needs_body):
                     if criterion.matches(email_msg):
                         matches.append(email_msg)
                         if len(matches) >= limit:
@@ -257,6 +259,7 @@ def preview(query: str, folder: str, page_size: int):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
+    needs_body = query_requires_body(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     with Progress(
@@ -274,7 +277,7 @@ def preview(query: str, folder: str, page_size: int):
                 progress.update(task, description=f"Found {len(uids)} emails, filtering...")
 
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=False):
+                for email_msg in client.fetch_emails(uids, include_body=needs_body):
                     if criterion.matches(email_msg):
                         matches.append(email_msg)
         except IMAPError as e:
@@ -341,6 +344,7 @@ def delete(query: str, folder: str, yes: bool):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
+    needs_body = query_requires_body(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     with Progress(
@@ -358,7 +362,7 @@ def delete(query: str, folder: str, yes: bool):
                 progress.update(task, description=f"Found {len(uids)} emails, filtering...")
 
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=False):
+                for email_msg in client.fetch_emails(uids, include_body=needs_body):
                     if criterion.matches(email_msg):
                         matches.append(email_msg)
         except IMAPError as e:
@@ -637,6 +641,7 @@ def export_cmd(query: str, fmt: str, output: str, folder: str):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
+    needs_body = query_requires_body(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     with Progress(
@@ -654,7 +659,7 @@ def export_cmd(query: str, fmt: str, output: str, folder: str):
                 progress.update(task, description=f"Found {len(uids)} emails, filtering...")
 
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=False):
+                for email_msg in client.fetch_emails(uids, include_body=needs_body):
                     if criterion.matches(email_msg):
                         matches.append(email_msg)
         except IMAPError as e:

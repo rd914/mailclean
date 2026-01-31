@@ -406,3 +406,56 @@ class TestNotCriterion:
         email = make_email(from_address="sender@example.com")
 
         assert criterion.matches(email)
+
+
+class TestRequiresBody:
+    """Tests for requires_body property."""
+
+    def test_body_criterion_requires_body(self):
+        """Test BodyCriterion requires body."""
+        criterion = BodyCriterion("/test/")
+        assert criterion.requires_body
+
+    def test_from_criterion_no_body(self):
+        """Test FromCriterion doesn't require body."""
+        criterion = FromCriterion("test@example.com")
+        assert not criterion.requires_body
+
+    def test_subject_criterion_no_body(self):
+        """Test SubjectCriterion doesn't require body."""
+        criterion = SubjectCriterion("/test/")
+        assert not criterion.requires_body
+
+    def test_and_with_body(self):
+        """Test AndCriterion with body criterion."""
+        criterion = AndCriterion(
+            FromCriterion("test@example.com"),
+            BodyCriterion("/test/"),
+        )
+        assert criterion.requires_body
+
+    def test_and_without_body(self):
+        """Test AndCriterion without body criterion."""
+        criterion = AndCriterion(
+            FromCriterion("test@example.com"),
+            SubjectCriterion("/test/"),
+        )
+        assert not criterion.requires_body
+
+    def test_or_with_body(self):
+        """Test OrCriterion with body criterion."""
+        criterion = OrCriterion(
+            FromCriterion("test@example.com"),
+            BodyCriterion("/test/"),
+        )
+        assert criterion.requires_body
+
+    def test_not_with_body(self):
+        """Test NotCriterion with body criterion."""
+        criterion = NotCriterion(BodyCriterion("/test/"))
+        assert criterion.requires_body
+
+    def test_not_without_body(self):
+        """Test NotCriterion without body criterion."""
+        criterion = NotCriterion(FromCriterion("test@example.com"))
+        assert not criterion.requires_body

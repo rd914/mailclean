@@ -38,3 +38,17 @@ def compile_query(query: str) -> Criterion:
         A Criterion object that can be used to match emails
     """
     return parse_query(query)
+
+
+def query_requires_body(query: str) -> bool:
+    """
+    Check if a query requires email body content.
+
+    Args:
+        query: The query string to check
+
+    Returns:
+        True if the query contains a body: criterion
+    """
+    criterion = parse_query(query)
+    return criterion.requires_body

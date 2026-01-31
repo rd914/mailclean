@@ -22,7 +22,7 @@ KNOWN_PROVIDERS = {
         'port': 993,
     },
     'neomailbox': {
-        'server': 'mail.neomailbox.com',
+        'server': 'neomailbox.net',
         'port': 993,
     },
 }
