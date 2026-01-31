@@ -18,11 +18,11 @@ def parse_date(date_str: str) -> Optional[datetime]:
 
 def parse_relative_date(relative_str: str) -> Optional[datetime]:
     """
-    Parse a relative date string like '30d', '2w', '3m' into a datetime.
+    Parse a relative date string like '30d', '2w', '3m', '1y' into a datetime.
 
     Returns the datetime that many units ago from now.
     """
-    match = re.match(r'^(\d+)([dwm])$', relative_str.lower())
+    match = re.match(r'^(\d+)([dwmy])$', relative_str.lower())
     if not match:
         return None
 
@@ -38,6 +38,9 @@ def parse_relative_date(relative_str: str) -> Optional[datetime]:
     elif unit == 'm':
         # Approximate months as 30 days
         return now - timedelta(days=amount * 30)
+    elif unit == 'y':
+        # Approximate years as 365 days
+        return now - timedelta(days=amount * 365)
 
     return None
 

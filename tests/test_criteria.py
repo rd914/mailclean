@@ -238,6 +238,13 @@ class TestOlderThanCriterion:
 
         assert criterion.matches(email)
 
+    def test_older_than_years(self):
+        """Test older than N years."""
+        criterion = OlderThanCriterion("1y")
+        email = make_email(date=datetime.now() - timedelta(days=400))
+
+        assert criterion.matches(email)
+
     def test_invalid_format(self):
         """Test invalid relative date format."""
         with pytest.raises(ValueError):
