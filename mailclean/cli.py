@@ -183,7 +183,8 @@ def folders():
 @click.argument('query')
 @click.option('--folder', '-f', default='INBOX', help='Folder to search in')
 @click.option('--limit', '-l', default=100, help='Maximum results to return')
-def search(query: str, folder: str, limit: int):
+@click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
+def search(query: str, folder: str, limit: int, scrub: bool):
     """Search for emails matching a query."""
     config, account, password = get_client_from_config()
 
@@ -214,7 +215,8 @@ def search(query: str, folder: str, limit: int):
                 # Fetch and filter emails
                 matches = []
                 for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    if criterion.matches(email_msg):
+                    match_target = email_msg.scrubbed() if scrub else email_msg
+                    if criterion.matches(match_target):
                         matches.append(email_msg)
                         if len(matches) >= limit:
                             break
@@ -249,7 +251,8 @@ def search(query: str, folder: str, limit: int):
 @click.argument('query')
 @click.option('--folder', '-f', default='INBOX', help='Folder to search in')
 @click.option('--page-size', '-p', default=20, help='Results per page')
-def preview(query: str, folder: str, page_size: int):
+@click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
+def preview(query: str, folder: str, page_size: int, scrub: bool):
     """Preview emails matching a query with pagination."""
     config, account, password = get_client_from_config()
 
@@ -278,7 +281,8 @@ def preview(query: str, folder: str, page_size: int):
 
                 matches = []
                 for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    if criterion.matches(email_msg):
+                    match_target = email_msg.scrubbed() if scrub else email_msg
+                    if criterion.matches(match_target):
                         matches.append(email_msg)
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")
@@ -334,7 +338,8 @@ def preview(query: str, folder: str, page_size: int):
 @click.argument('query')
 @click.option('--folder', '-f', default='INBOX', help='Folder to delete from')
 @click.option('--yes', '-y', is_flag=True, help='Skip confirmation')
-def delete(query: str, folder: str, yes: bool):
+@click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
+def delete(query: str, folder: str, yes: bool, scrub: bool):
     """Delete emails matching a query (moves to MailClean-Deleted)."""
     config, account, password = get_client_from_config()
 
@@ -363,7 +368,8 @@ def delete(query: str, folder: str, yes: bool):
 
                 matches = []
                 for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    if criterion.matches(email_msg):
+                    match_target = email_msg.scrubbed() if scrub else email_msg
+                    if criterion.matches(match_target):
                         matches.append(email_msg)
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")
@@ -631,7 +637,8 @@ def trash_list():
 @click.option('--format', '-f', 'fmt', type=click.Choice(['csv', 'json']), default='csv', help='Output format')
 @click.option('--output', '-o', required=True, help='Output file path')
 @click.option('--folder', default='INBOX', help='Folder to search in')
-def export_cmd(query: str, fmt: str, output: str, folder: str):
+@click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
+def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
     """Export matching emails to CSV or JSON."""
     config, account, password = get_client_from_config()
 
@@ -660,7 +667,8 @@ def export_cmd(query: str, fmt: str, output: str, folder: str):
 
                 matches = []
                 for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    if criterion.matches(email_msg):
+                    match_target = email_msg.scrubbed() if scrub else email_msg
+                    if criterion.matches(match_target):
                         matches.append(email_msg)
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")

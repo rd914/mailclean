@@ -1,6 +1,7 @@
 """Utility functions for date parsing and helpers."""
 
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -92,3 +93,74 @@ def wildcard_to_regex(pattern: str) -> str:
     escaped = re.escape(pattern)
     # Convert escaped \* back to .*
     return escaped.replace(r'\*', '.*')
+
+
+def process_backspaces(text: str) -> str:
+    """
+    Process backspace characters to reveal the actual rendered text.
+
+    Spammers sometimes output "Ge\x08\x08ek" which renders as "ek" but
+    hides the word "Geek" from simple pattern matching.
+    """
+    result = []
+    for char in text:
+        if char == '\x08':  # Backspace
+            if result:
+                result.pop()
+        else:
+            result.append(char)
+    return ''.join(result)
+
+
+def normalize_homoglyphs(text: str) -> str:
+    """
+    Normalize Unicode homoglyphs to ASCII equivalents.
+
+    Converts characters like "Géék Sqüád" to "Geek Squad" by:
+    1. Decomposing characters (NFKD normalization)
+    2. Removing combining marks (accents, diacritics)
+    3. Keeping only ASCII-compatible characters
+    """
+    # NFKD normalization decomposes characters
+    # e.g., "é" becomes "e" + combining acute accent
+    normalized = unicodedata.normalize('NFKD', text)
+
+    # Remove combining characters (category 'M' = Mark)
+    # This strips accents and diacritics
+    result = []
+    for char in normalized:
+        if unicodedata.category(char) != 'Mn':  # Mn = Mark, Nonspacing
+            # Try to keep ASCII equivalents
+            try:
+                char.encode('ascii')
+                result.append(char)
+            except UnicodeEncodeError:
+                # For characters that still aren't ASCII after normalization,
+                # try common replacements
+                replacements = {
+                    'ø': 'o', 'Ø': 'O',
+                    'ß': 'ss',
+                    'æ': 'ae', 'Æ': 'AE',
+                    'œ': 'oe', 'Œ': 'OE',
+                    'đ': 'd', 'Đ': 'D',
+                    'ł': 'l', 'Ł': 'L',
+                    '€': 'E',
+                    '£': 'L',
+                    '¥': 'Y',
+                }
+                result.append(replacements.get(char, char))
+
+    return ''.join(result)
+
+
+def scrub_text(text: str) -> str:
+    """
+    Apply all spam-evasion countermeasures to text.
+
+    Combines backspace processing and homoglyph normalization.
+    """
+    if not text:
+        return text
+    text = process_backspaces(text)
+    text = normalize_homoglyphs(text)
+    return text
