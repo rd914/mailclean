@@ -9,9 +9,13 @@ from dateutil import parser as date_parser
 
 
 def parse_date(date_str: str) -> Optional[datetime]:
-    """Parse a date string into a datetime object."""
+    """Parse a date string into a timezone-aware datetime object."""
     try:
-        return date_parser.parse(date_str)
+        dt = date_parser.parse(date_str)
+        # Ensure timezone-aware (assume UTC if naive)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
     except (ValueError, TypeError):
         return None
 

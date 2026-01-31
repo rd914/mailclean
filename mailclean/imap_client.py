@@ -7,7 +7,7 @@ import imaplib
 import re
 import socket
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Generator, Iterator, Optional
 
 from .models import EmailMessage
@@ -293,7 +293,12 @@ class IMAPClient:
         date = None
         if date_str:
             try:
+                # Convert Header object to string if needed
+                date_str = str(date_str)
                 parsed = email.utils.parsedate_to_datetime(date_str)
+                # Ensure timezone-aware (assume UTC if naive)
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
                 date = parsed
             except (ValueError, TypeError):
                 pass
