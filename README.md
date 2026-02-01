@@ -59,8 +59,9 @@ addressee:anyone@example.com       # Match To, CC, or BCC
 date:2024-06-15                    # Exact date
 before:2024-01-01                  # Before date
 after:2023-06-01                   # After date
-older-than:30d                     # Relative: d=days, w=weeks, m=months
+older-than:30d                     # Relative: d=days, w=weeks, m=months, y=years
 newer-than:1w                      # Within last week
+older-than:1y                      # Older than 1 year
 ```
 
 ### Regex Matching
@@ -101,18 +102,37 @@ mailclean account use <name>       # Set active account
 ### Search and Preview
 
 ```bash
-mailclean search <query> [--folder INBOX] [--limit 100]
-mailclean preview <query> [--folder INBOX] [--page-size 20]
+mailclean search <query> [--folder INBOX] [--limit 100] [--scrub]
+mailclean preview <query> [--folder INBOX] [--page-size 20] [--scrub]
 ```
+
+The `--scrub` flag normalizes text to help detect spam obfuscation (e.g., "F.R" → "FREE").
 
 ### Delete and Restore
 
 ```bash
-mailclean delete <query> [--folder INBOX] [--yes]
+mailclean delete <query> [--folder INBOX] [--yes] [--select]
 mailclean restore [<uids>] [--to INBOX]
 mailclean trash list
 mailclean purge [--yes]
 ```
+
+The `--select` (`-s`) flag enables interactive selection mode where you can use arrow keys to navigate and space/enter to toggle individual emails for deletion:
+- `↑/↓` or `k/j`: Move cursor
+- `Space` or `Enter`: Toggle selection and move to next line
+- `a`: Select all on current page
+- `z`: Deselect all on current page
+- `←/→`: Navigate pages
+- `d`: Proceed with deletion
+- `q`: Cancel
+
+### Top Senders
+
+```bash
+mailclean top [--folder INBOX] [--limit 20] [--query "<query>"]
+```
+
+Shows the highest-volume senders in a folder, optionally filtered by a query.
 
 ### Export
 

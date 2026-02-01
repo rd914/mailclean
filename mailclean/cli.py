@@ -10,6 +10,51 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.prompt import Prompt, Confirm
+from rich.live import Live
+from rich.text import Text
+
+
+def _get_key():
+    """Read a single keypress, handling special keys cross-platform."""
+    if sys.platform == 'win32':
+        import msvcrt
+        key = msvcrt.getwch()
+        if key in ('\x00', '\xe0'):  # Special key prefix on Windows
+            key2 = msvcrt.getwch()
+            if key2 == 'H':
+                return 'up'
+            elif key2 == 'P':
+                return 'down'
+            elif key2 == 'K':
+                return 'left'
+            elif key2 == 'M':
+                return 'right'
+            return None
+        return key
+    else:
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            key = sys.stdin.read(1)
+            if key == '\x1b':  # Escape sequence
+                key2 = sys.stdin.read(1)
+                if key2 == '[':
+                    key3 = sys.stdin.read(1)
+                    if key3 == 'A':
+                        return 'up'
+                    elif key3 == 'B':
+                        return 'down'
+                    elif key3 == 'C':
+                        return 'right'
+                    elif key3 == 'D':
+                        return 'left'
+                return 'escape'
+            return key
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 from .config import Config, Account, KNOWN_PROVIDERS
 from .imap_client import IMAPClient, IMAPError, MAILCLEAN_DELETED_FOLDER
@@ -340,7 +385,8 @@ def preview(query: str, folder: str, page_size: int, scrub: bool):
 @click.option('--folder', '-f', default='INBOX', help='Folder to delete from')
 @click.option('--yes', '-y', is_flag=True, help='Skip confirmation')
 @click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
-def delete(query: str, folder: str, yes: bool, scrub: bool):
+@click.option('--select', '-s', is_flag=True, help='Interactively select emails to delete')
+def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
     """Delete emails matching a query (moves to MailClean-Deleted)."""
     config, account, password = get_client_from_config()
 
@@ -379,6 +425,136 @@ def delete(query: str, folder: str, yes: bool, scrub: bool):
     if not matches:
         console.print("[yellow]No emails match your query.[/yellow]")
         return
+
+    # Interactive selection mode
+    if select:
+        selected_uids = set()
+        page_size = 20
+        total_pages = (len(matches) + page_size - 1) // page_size
+        current_page = 0
+        cursor = 0  # Position within current page
+
+        def render_selection_table():
+            """Render the selection table with cursor highlight."""
+            start = current_page * page_size
+            end = min(start + page_size, len(matches))
+            page_emails = matches[start:end]
+
+            table = Table(title=f"Select emails to delete: {query}")
+            table.add_column("", style="dim", width=2)  # Cursor indicator
+            table.add_column("Sel", style="magenta", width=3)
+            table.add_column("Date", style="cyan")
+            table.add_column("From", style="green", max_width=30)
+            table.add_column("Subject", style="yellow", max_width=50)
+
+            for i, email_msg in enumerate(page_emails):
+                is_selected = email_msg.uid in selected_uids
+                sel_marker = "[X]" if is_selected else "[ ]"
+                cursor_marker = ">" if i == cursor else " "
+                date_str = email_msg.date.strftime('%Y-%m-%d %H:%M') if email_msg.date else 'Unknown'
+
+                # Highlight the cursor row
+                if i == cursor:
+                    table.add_row(
+                        cursor_marker,
+                        sel_marker,
+                        f"[bold]{date_str}[/bold]",
+                        f"[bold]{email_msg.from_address[:30]}[/bold]",
+                        f"[bold]{(email_msg.subject[:50] if email_msg.subject else '(no subject)')}[/bold]",
+                    )
+                else:
+                    table.add_row(
+                        cursor_marker,
+                        sel_marker,
+                        date_str,
+                        email_msg.from_address[:30],
+                        email_msg.subject[:50] if email_msg.subject else '(no subject)',
+                    )
+
+            return table
+
+        console.clear()
+        with Live(console=console, refresh_per_second=10, screen=False) as live:
+            while True:
+                start = current_page * page_size
+                end = min(start + page_size, len(matches))
+                page_count = end - start
+
+                # Build display
+                output = Text()
+                output.append(f"\nPage {current_page + 1}/{total_pages} | Total: {len(matches)} | Selected: {len(selected_uids)}\n\n", style="dim")
+
+                live.update(output)
+                console.print(render_selection_table())
+                console.print("\n[dim]↑/↓=move | space=toggle | a=all | z=none | ←/→=page | d=delete | q=quit[/dim]")
+
+                key = _get_key()
+
+                if key == 'q':
+                    live.stop()
+                    console.print("[yellow]Cancelled.[/yellow]")
+                    return
+                elif key == 'd':
+                    live.stop()
+                    break
+                elif key == 'up' or key == 'k':
+                    if cursor > 0:
+                        cursor -= 1
+                    elif current_page > 0:
+                        current_page -= 1
+                        cursor = page_size - 1
+                elif key == 'down' or key == 'j':
+                    if cursor < page_count - 1:
+                        cursor += 1
+                    elif current_page < total_pages - 1:
+                        current_page += 1
+                        cursor = 0
+                elif key == 'left' and current_page > 0:
+                    current_page -= 1
+                    cursor = 0
+                elif key == 'right' and current_page < total_pages - 1:
+                    current_page += 1
+                    cursor = 0
+                elif key == ' ':  # Space to toggle
+                    email_msg = matches[start + cursor]
+                    if email_msg.uid in selected_uids:
+                        selected_uids.discard(email_msg.uid)
+                    else:
+                        selected_uids.add(email_msg.uid)
+                    # Move to next line
+                    if cursor < page_count - 1:
+                        cursor += 1
+                    elif current_page < total_pages - 1:
+                        current_page += 1
+                        cursor = 0
+                elif key == 'a':
+                    # Select all on current page
+                    for email_msg in matches[start:end]:
+                        selected_uids.add(email_msg.uid)
+                elif key == 'z':
+                    # Deselect all on current page
+                    for email_msg in matches[start:end]:
+                        selected_uids.discard(email_msg.uid)
+                elif key == '\r' or key == '\n':  # Enter also toggles
+                    email_msg = matches[start + cursor]
+                    if email_msg.uid in selected_uids:
+                        selected_uids.discard(email_msg.uid)
+                    else:
+                        selected_uids.add(email_msg.uid)
+                    # Move to next line
+                    if cursor < page_count - 1:
+                        cursor += 1
+                    elif current_page < total_pages - 1:
+                        current_page += 1
+                        cursor = 0
+
+                console.clear()
+
+        # Filter matches to only selected
+        matches = [m for m in matches if m.uid in selected_uids]
+        if not matches:
+            console.print("[yellow]No emails selected.[/yellow]")
+            return
 
     # Show summary
     table = Table(title=f"Emails to Delete ({len(matches)} matches)")
