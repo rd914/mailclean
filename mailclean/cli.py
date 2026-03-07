@@ -58,6 +58,7 @@ def _get_key():
 
 from .config import Config, Account, KNOWN_PROVIDERS
 from .imap_client import IMAPClient, IMAPError, MAILCLEAN_DELETED_FOLDER
+from .index import MailIndex, INDEX_DIR, _folder_to_filename, load_and_sync
 from .query.parser import parse_query, ParseError
 from .query.evaluator import query_requires_body
 from .export import export_to_csv, export_to_json
@@ -249,23 +250,34 @@ def search(query: str, folder: str, limit: int, scrub: bool):
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Searching...", total=None)
+        task = progress.add_task("Connecting...", total=None)
 
         try:
             with client.connection():
                 client.select_folder(folder)
-                uids = client.search_uids('ALL')
 
-                progress.update(task, description=f"Found {len(uids)} emails, filtering...")
+                def _update(desc: str) -> None:
+                    progress.update(task, description=desc)
 
-                # Fetch and filter emails
+                index = load_and_sync(account.name, folder, client, on_progress=_update)
+
+                progress.update(task, description=f"Filtering {index.email_count} emails...")
+
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    match_target = email_msg.scrubbed() if scrub else email_msg
-                    if criterion.matches(match_target):
-                        matches.append(email_msg)
-                        if len(matches) >= limit:
-                            break
+                if not needs_body:
+                    for email_msg in index.iter_emails():
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
+                            if len(matches) >= limit:
+                                break
+                else:
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
+                            if len(matches) >= limit:
+                                break
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")
             return
@@ -316,20 +328,30 @@ def preview(query: str, folder: str, page_size: int, scrub: bool):
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Searching...", total=None)
+        task = progress.add_task("Connecting...", total=None)
 
         try:
             with client.connection():
                 client.select_folder(folder)
-                uids = client.search_uids('ALL')
 
-                progress.update(task, description=f"Found {len(uids)} emails, filtering...")
+                def _update(desc: str) -> None:
+                    progress.update(task, description=desc)
+
+                index = load_and_sync(account.name, folder, client, on_progress=_update)
+
+                progress.update(task, description=f"Filtering {index.email_count} emails...")
 
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    match_target = email_msg.scrubbed() if scrub else email_msg
-                    if criterion.matches(match_target):
-                        matches.append(email_msg)
+                if not needs_body:
+                    for email_msg in index.iter_emails():
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
+                else:
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")
             return
@@ -399,25 +421,39 @@ def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
     needs_body = query_requires_body(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
+    # Load index outside the connection so we can invalidate it after deletion
+    index = MailIndex(account.name, folder)
+    index.load()
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Searching...", total=None)
+        task = progress.add_task("Connecting...", total=None)
 
         try:
             with client.connection():
                 client.select_folder(folder)
-                uids = client.search_uids('ALL')
 
-                progress.update(task, description=f"Found {len(uids)} emails, filtering...")
+                def _update(desc: str) -> None:
+                    progress.update(task, description=desc)
+
+                index = load_and_sync(account.name, folder, client, on_progress=_update)
+
+                progress.update(task, description=f"Filtering {index.email_count} emails...")
 
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    match_target = email_msg.scrubbed() if scrub else email_msg
-                    if criterion.matches(match_target):
-                        matches.append(email_msg)
+                if not needs_body:
+                    for email_msg in index.iter_emails():
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
+                else:
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")
             return
@@ -599,6 +635,9 @@ def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
 
     console.print(f"[green]Moved {moved} emails to MailClean-Deleted.[/green]")
     console.print("[dim]Use 'mailclean restore' to recover emails within 30 days.[/dim]")
+
+    if moved > 0:
+        index.invalidate_uids(match_uids)
 
 
 # Purge command
@@ -836,24 +875,25 @@ def top(folder: str, limit: int, query: Optional[str], scrub: bool):
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Fetching emails...", total=None)
+        task = progress.add_task("Connecting...", total=None)
 
         try:
             with client.connection():
                 client.select_folder(folder)
-                uids = client.search_uids('ALL')
 
-                progress.update(task, description=f"Analyzing {len(uids)} emails...")
+                def _update(desc: str) -> None:
+                    progress.update(task, description=desc)
 
-                # Count by sender
+                index = load_and_sync(account.name, folder, client, on_progress=_update)
+
+                progress.update(task, description=f"Analyzing {index.email_count} emails...")
+
                 sender_counts: Counter[str] = Counter()
-                for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    # Apply query filter if provided
+                for email_msg in index.iter_emails():
                     if criterion:
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if not criterion.matches(match_target):
                             continue
-
                     sender_counts[email_msg.from_address] += 1
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")
@@ -914,20 +954,30 @@ def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Searching...", total=None)
+        task = progress.add_task("Connecting...", total=None)
 
         try:
             with client.connection():
                 client.select_folder(folder)
-                uids = client.search_uids('ALL')
 
-                progress.update(task, description=f"Found {len(uids)} emails, filtering...")
+                def _update(desc: str) -> None:
+                    progress.update(task, description=desc)
+
+                index = load_and_sync(account.name, folder, client, on_progress=_update)
+
+                progress.update(task, description=f"Filtering {index.email_count} emails...")
 
                 matches = []
-                for email_msg in client.fetch_emails(uids, include_body=needs_body):
-                    match_target = email_msg.scrubbed() if scrub else email_msg
-                    if criterion.matches(match_target):
-                        matches.append(email_msg)
+                if not needs_body:
+                    for email_msg in index.iter_emails():
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
+                else:
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                        match_target = email_msg.scrubbed() if scrub else email_msg
+                        if criterion.matches(match_target):
+                            matches.append(email_msg)
         except IMAPError as e:
             console.print(f"[red]Error: {e}[/red]")
             return
@@ -943,6 +993,121 @@ def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
         count = export_to_json(matches, output)
 
     console.print(f"[green]Exported {count} emails to {output}[/green]")
+
+
+# Index management commands
+@cli.group('index')
+def index_cmd():
+    """Manage the local email index."""
+    pass
+
+
+@index_cmd.command('status')
+@click.option('--folder', '-f', default='INBOX', help='Folder to check')
+def index_status(folder: str):
+    """Show index status for the active account and folder."""
+    config, account, _ = get_client_from_config()
+
+    index = MailIndex(account.name, folder)
+    loaded = index.load()
+
+    if not loaded:
+        console.print(f"[yellow]No index found for {account.email} / {folder}[/yellow]")
+        console.print("[dim]It will be built automatically on the next search, preview, delete, or export.[/dim]")
+        return
+
+    from .index import DEFAULT_MAX_AGE_DAYS
+    table = Table(title=f"Index: {account.email} / {folder}")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Emails indexed", str(index.email_count))
+    table.add_row(
+        "First built",
+        index.built_at.strftime('%Y-%m-%d %H:%M UTC') if index.built_at else "—",
+    )
+    table.add_row(
+        "Last synced",
+        index.last_synced_at.strftime('%Y-%m-%d %H:%M UTC') if index.last_synced_at else "—",
+    )
+    table.add_row(
+        "Last full rebuild",
+        index.full_rebuild_at.strftime('%Y-%m-%d %H:%M UTC') if index.full_rebuild_at else "—",
+    )
+    table.add_row(
+        "Full rebuild due",
+        "[red]Yes[/red]" if index.needs_full_rebuild() else f"No (every {DEFAULT_MAX_AGE_DAYS} days)",
+    )
+    table.add_row("Index file", str(index.path))
+
+    console.print(table)
+
+
+@index_cmd.command('rebuild')
+@click.option('--folder', '-f', default='INBOX', help='Folder to rebuild index for')
+def index_rebuild(folder: str):
+    """Force a full index rebuild for a folder."""
+    config, account, password = get_client_from_config()
+
+    client = IMAPClient(account.server, account.port, account.email, password)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Connecting...", total=None)
+
+        try:
+            with client.connection():
+                client.select_folder(folder)
+
+                def _update(desc: str) -> None:
+                    progress.update(task, description=desc)
+
+                index = MailIndex(account.name, folder)
+                index.load()
+                count = index.full_rebuild(client, on_progress=_update)
+        except IMAPError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            return
+
+    console.print(f"[green]Index rebuilt: {count} emails indexed for {account.email} / {folder}[/green]")
+
+
+@index_cmd.command('clear')
+@click.option('--folder', '-f', default=None, help='Folder to clear (omit for all folders)')
+@click.option('--yes', '-y', is_flag=True, help='Skip confirmation')
+def index_clear(folder: Optional[str], yes: bool):
+    """Delete local index files for the active account."""
+    config, account, _ = get_client_from_config()
+
+    account_dir = INDEX_DIR / account.name
+
+    if folder:
+        target = account_dir / _folder_to_filename(folder)
+        if not target.exists():
+            console.print(f"[yellow]No index found for {account.email} / {folder}[/yellow]")
+            return
+        if not yes and not Confirm.ask(f"Delete index for {account.email} / {folder}?"):
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
+        target.unlink()
+        console.print(f"[green]Index cleared for {folder}.[/green]")
+    else:
+        if not account_dir.exists():
+            console.print("[yellow]No index files found.[/yellow]")
+            return
+        files = list(account_dir.glob('*.json'))
+        if not files:
+            console.print("[yellow]No index files found.[/yellow]")
+            return
+        if not yes and not Confirm.ask(f"Delete all {len(files)} index file(s) for {account.email}?"):
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
+        for f in files:
+            f.unlink()
+        console.print(f"[green]Cleared {len(files)} index file(s) for {account.email}.[/green]")
 
 
 # Saved queries
