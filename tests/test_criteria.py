@@ -8,7 +8,7 @@ from mailclean.query.criteria import (
     FromCriterion, ToCriterion, CcCriterion, BccCriterion, AddresseeCriterion,
     DateCriterion, BeforeCriterion, AfterCriterion,
     OlderThanCriterion, NewerThanCriterion,
-    SubjectCriterion, BodyCriterion,
+    SubjectCriterion, BodyCriterion, HeaderCriterion,
     AndCriterion, OrCriterion, NotCriterion,
 )
 
@@ -319,6 +319,64 @@ class TestBodyCriterion:
         assert not criterion.matches(email)
 
 
+class TestHeaderCriterion:
+    """Tests for HeaderCriterion."""
+
+    def _make_email_with_headers(self, headers: dict) -> EmailMessage:
+        return EmailMessage(
+            message_id='<test@example.com>',
+            uid=1,
+            subject='Test',
+            from_address='sender@example.com',
+            to_addresses=['recipient@example.com'],
+            cc_addresses=[],
+            bcc_addresses=[],
+            date=datetime.now(),
+            folder='INBOX',
+            headers=headers,
+        )
+
+    def test_regex_match(self):
+        criterion = HeaderCriterion('list-unsubscribe', '/.*mailchimpapp.*/')
+        email = self._make_email_with_headers({
+            'List-Unsubscribe': '<mailto:unsub@mailchimpapp.net>'
+        })
+        assert criterion.matches(email)
+
+    def test_regex_no_match(self):
+        criterion = HeaderCriterion('list-unsubscribe', '/.*mailchimpapp.*/')
+        email = self._make_email_with_headers({
+            'List-Unsubscribe': '<mailto:unsub@example.com>'
+        })
+        assert not criterion.matches(email)
+
+    def test_wildcard_match(self):
+        criterion = HeaderCriterion('x-mailer', '*Apple*')
+        email = self._make_email_with_headers({'X-Mailer': 'Apple Mail'})
+        assert criterion.matches(email)
+
+    def test_header_name_case_insensitive(self):
+        """Header name lookup is case-insensitive."""
+        criterion = HeaderCriterion('list-unsubscribe', '*mailchimp*')
+        email = self._make_email_with_headers({
+            'List-Unsubscribe': 'mailto:unsub@mailchimp.com'
+        })
+        assert criterion.matches(email)
+
+    def test_missing_header_no_match(self):
+        criterion = HeaderCriterion('x-mailer', '*Outlook*')
+        email = self._make_email_with_headers({})
+        assert not criterion.matches(email)
+
+    def test_requires_headers(self):
+        criterion = HeaderCriterion('x-mailer', 'Apple Mail')
+        assert criterion.requires_headers
+
+    def test_does_not_require_body(self):
+        criterion = HeaderCriterion('x-mailer', 'Apple Mail')
+        assert not criterion.requires_body
+
+
 class TestAndCriterion:
     """Tests for AndCriterion."""
 
@@ -466,3 +524,32 @@ class TestRequiresBody:
         """Test NotCriterion without body criterion."""
         criterion = NotCriterion(FromCriterion("test@example.com"))
         assert not criterion.requires_body
+
+    def test_header_criterion_requires_headers(self):
+        criterion = HeaderCriterion('x-mailer', '*Apple*')
+        assert criterion.requires_headers
+
+    def test_and_propagates_requires_headers(self):
+        criterion = AndCriterion(
+            FromCriterion("test@example.com"),
+            HeaderCriterion('x-mailer', '*Apple*'),
+        )
+        assert criterion.requires_headers
+
+    def test_or_propagates_requires_headers(self):
+        criterion = OrCriterion(
+            FromCriterion("test@example.com"),
+            HeaderCriterion('x-mailer', '*Apple*'),
+        )
+        assert criterion.requires_headers
+
+    def test_not_propagates_requires_headers(self):
+        criterion = NotCriterion(HeaderCriterion('x-mailer', '*Outlook*'))
+        assert criterion.requires_headers
+
+    def test_no_header_criterion_no_requires_headers(self):
+        criterion = AndCriterion(
+            FromCriterion("test@example.com"),
+            SubjectCriterion("/test/"),
+        )
+        assert not criterion.requires_headers

@@ -7,7 +7,7 @@ from mailclean.query.criteria import (
     FromCriterion, ToCriterion, CcCriterion, BccCriterion, AddresseeCriterion,
     DateCriterion, BeforeCriterion, AfterCriterion,
     OlderThanCriterion, NewerThanCriterion,
-    SubjectCriterion, BodyCriterion,
+    SubjectCriterion, BodyCriterion, HeaderCriterion,
     AndCriterion, OrCriterion, NotCriterion,
 )
 
@@ -142,6 +142,25 @@ class TestParser:
         """Test that invalid relative date raises error."""
         with pytest.raises(ParseError):
             parse_query("older-than:xyz")
+
+    def test_arbitrary_header_criterion(self):
+        """Test that unknown keywords parse as HeaderCriterion."""
+        criterion = parse_query("list-unsubscribe:/.*mailchimpapp.*/")
+        assert isinstance(criterion, HeaderCriterion)
+        assert criterion.header_name == "list-unsubscribe"
+
+    def test_arbitrary_header_in_compound_query(self):
+        """Test header criterion combined with other criteria."""
+        criterion = parse_query("from:*@example.com AND list-unsubscribe:/.*mailchimp.*/")
+        assert isinstance(criterion, AndCriterion)
+        assert isinstance(criterion.left, FromCriterion)
+        assert isinstance(criterion.right, HeaderCriterion)
+
+    def test_arbitrary_header_requires_headers(self):
+        """Test that header criterion sets requires_headers."""
+        criterion = parse_query("x-mailer:*Apple*")
+        assert criterion.requires_headers
+        assert not criterion.requires_body
 
     def test_double_not(self):
         """Test double NOT."""

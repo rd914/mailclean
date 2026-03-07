@@ -17,6 +17,7 @@ from .criteria import (
     NewerThanCriterion,
     SubjectCriterion,
     BodyCriterion,
+    HeaderCriterion,
     AndCriterion,
     OrCriterion,
     NotCriterion,
@@ -172,10 +173,8 @@ class Parser:
         value = value_token.value
 
         if keyword not in CRITERION_MAP:
-            raise ParseError(
-                f"Unknown keyword: {keyword}",
-                keyword_token.position
-            )
+            # Treat as an arbitrary email header criterion
+            return HeaderCriterion(keyword, value)
 
         criterion_class = CRITERION_MAP[keyword]
 

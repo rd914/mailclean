@@ -161,17 +161,16 @@ class Lexer:
                 yield Token(TokenType.NOT, 'NOT', start_pos)
                 continue
 
-            # Check for keyword followed by colon
+            # Any word followed by colon is a keyword (known field or arbitrary header)
             word_lower = word.lower()
-            if word_lower in KEYWORDS:
+            self._skip_whitespace()
+            if self._current_char() == ':':
+                self._advance()  # Skip colon
                 self._skip_whitespace()
-                if self._current_char() == ':':
-                    self._advance()  # Skip colon
-                    self._skip_whitespace()
-                    value = self._read_value()
-                    yield Token(TokenType.KEYWORD, word_lower, start_pos)
-                    yield Token(TokenType.COLON, ':', self.pos)
-                    yield Token(TokenType.VALUE, value, self.pos)
-                    continue
+                value = self._read_value()
+                yield Token(TokenType.KEYWORD, word_lower, start_pos)
+                yield Token(TokenType.COLON, ':', self.pos)
+                yield Token(TokenType.VALUE, value, self.pos)
+                continue
 
-            raise LexerError(f"Unknown keyword or missing colon: {word}", start_pos)
+            raise LexerError(f"Unexpected token: {word!r} (expected keyword:value)", start_pos)

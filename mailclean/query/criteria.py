@@ -13,6 +13,7 @@ from ..utils import (
     wildcard_to_regex,
 )
 
+
 if TYPE_CHECKING:
     from ..models import EmailMessage
 
@@ -28,6 +29,11 @@ class Criterion(ABC):
     @property
     def requires_body(self) -> bool:
         """Return True if this criterion needs email body content."""
+        return False
+
+    @property
+    def requires_headers(self) -> bool:
+        """Return True if this criterion needs the full headers dict (arbitrary headers)."""
         return False
 
     @abstractmethod
@@ -244,6 +250,33 @@ class BodyCriterion(Criterion):
         return f"Body({self.pattern_str!r})"
 
 
+class HeaderCriterion(Criterion):
+    """Match emails by any arbitrary header field."""
+
+    def __init__(self, header_name: str, pattern_str: str):
+        self.header_name = header_name.lower()
+        self.pattern_str = pattern_str
+        if pattern_str.startswith('/'):
+            pattern, flags = parse_regex_pattern(pattern_str)
+        else:
+            pattern = wildcard_to_regex(pattern_str)
+            flags = 0
+        self.regex = re.compile(pattern, flags)
+
+    def matches(self, email: 'EmailMessage') -> bool:
+        for key, value in email.headers.items():
+            if key.lower() == self.header_name:
+                return bool(self.regex.search(value))
+        return False
+
+    @property
+    def requires_headers(self) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return f"Header({self.header_name!r}, {self.pattern_str!r})"
+
+
 class AndCriterion(Criterion):
     """Combine criteria with AND logic."""
 
@@ -257,6 +290,10 @@ class AndCriterion(Criterion):
     @property
     def requires_body(self) -> bool:
         return self.left.requires_body or self.right.requires_body
+
+    @property
+    def requires_headers(self) -> bool:
+        return self.left.requires_headers or self.right.requires_headers
 
     def __repr__(self) -> str:
         return f"And({self.left!r}, {self.right!r})"
@@ -276,6 +313,10 @@ class OrCriterion(Criterion):
     def requires_body(self) -> bool:
         return self.left.requires_body or self.right.requires_body
 
+    @property
+    def requires_headers(self) -> bool:
+        return self.left.requires_headers or self.right.requires_headers
+
     def __repr__(self) -> str:
         return f"Or({self.left!r}, {self.right!r})"
 
@@ -292,6 +333,10 @@ class NotCriterion(Criterion):
     @property
     def requires_body(self) -> bool:
         return self.criterion.requires_body
+
+    @property
+    def requires_headers(self) -> bool:
+        return self.criterion.requires_headers
 
     def __repr__(self) -> str:
         return f"Not({self.criterion!r})"

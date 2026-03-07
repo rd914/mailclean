@@ -52,3 +52,17 @@ def query_requires_body(query: str) -> bool:
     """
     criterion = parse_query(query)
     return criterion.requires_body
+
+
+def query_requires_headers(query: str) -> bool:
+    """
+    Check if a query requires the full headers dict.
+
+    Args:
+        query: The query string to check
+
+    Returns:
+        True if the query contains an arbitrary header criterion
+    """
+    criterion = parse_query(query)
+    return criterion.requires_headers

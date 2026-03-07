@@ -60,7 +60,7 @@ from .config import Config, Account, KNOWN_PROVIDERS
 from .imap_client import IMAPClient, IMAPError, MAILCLEAN_DELETED_FOLDER
 from .index import MailIndex, INDEX_DIR, _folder_to_filename, load_and_sync
 from .query.parser import parse_query, ParseError
-from .query.evaluator import query_requires_body
+from .query.evaluator import query_requires_body, query_requires_headers
 from .export import export_to_csv, export_to_json
 
 console = Console()
@@ -243,6 +243,7 @@ def search(query: str, folder: str, limit: int, scrub: bool):
         return
 
     needs_body = query_requires_body(query)
+    needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     with Progress(
@@ -264,7 +265,7 @@ def search(query: str, folder: str, limit: int, scrub: bool):
                 progress.update(task, description=f"Filtering {index.email_count} emails...")
 
                 matches = []
-                if not needs_body:
+                if not needs_body and not needs_headers:
                     for email_msg in index.iter_emails():
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
@@ -272,7 +273,7 @@ def search(query: str, folder: str, limit: int, scrub: bool):
                             if len(matches) >= limit:
                                 break
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
@@ -321,6 +322,7 @@ def preview(query: str, folder: str, page_size: int, scrub: bool):
         return
 
     needs_body = query_requires_body(query)
+    needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     with Progress(
@@ -342,13 +344,13 @@ def preview(query: str, folder: str, page_size: int, scrub: bool):
                 progress.update(task, description=f"Filtering {index.email_count} emails...")
 
                 matches = []
-                if not needs_body:
+                if not needs_body and not needs_headers:
                     for email_msg in index.iter_emails():
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
@@ -419,6 +421,7 @@ def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
         return
 
     needs_body = query_requires_body(query)
+    needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     # Load index outside the connection so we can invalidate it after deletion
@@ -444,13 +447,13 @@ def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
                 progress.update(task, description=f"Filtering {index.email_count} emails...")
 
                 matches = []
-                if not needs_body:
+                if not needs_body and not needs_headers:
                     for email_msg in index.iter_emails():
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
@@ -947,6 +950,7 @@ def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
         return
 
     needs_body = query_requires_body(query)
+    needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
     with Progress(
@@ -968,13 +972,13 @@ def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
                 progress.update(task, description=f"Filtering {index.email_count} emails...")
 
                 matches = []
-                if not needs_body:
+                if not needs_body and not needs_headers:
                     for email_msg in index.iter_emails():
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=True):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)

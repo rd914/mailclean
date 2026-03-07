@@ -104,14 +104,21 @@ class TestLexer:
             assert tokens[0].type == TokenType.KEYWORD
             assert tokens[0].value == keyword
 
-    def test_unknown_keyword_raises_error(self):
-        """Test that unknown keywords raise an error."""
-        lexer = Lexer("unknown:value")
+    def test_arbitrary_header_keyword(self):
+        """Test that arbitrary header names are lexed as keywords."""
+        lexer = Lexer("list-unsubscribe:/.*mailchimpapp.*/")
+        tokens = list(lexer.tokenize())
 
-        with pytest.raises(LexerError) as exc_info:
+        assert tokens[0].type == TokenType.KEYWORD
+        assert tokens[0].value == "list-unsubscribe"
+        assert tokens[2].value == "/.*mailchimpapp.*/"
+
+    def test_word_without_colon_raises_error(self):
+        """Test that a bare word (no colon) raises an error."""
+        lexer = Lexer("unknown")
+
+        with pytest.raises(LexerError):
             list(lexer.tokenize())
-
-        assert "unknown" in str(exc_info.value).lower()
 
     def test_complex_query(self):
         """Test lexing a complex query."""
