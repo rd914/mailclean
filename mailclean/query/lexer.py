@@ -34,7 +34,7 @@ class Token:
 KEYWORDS = {
     'from', 'to', 'cc', 'bcc', 'addressee',
     'date', 'before', 'after', 'older-than', 'newer-than',
-    'subject', 'body',
+    'subject', 'body', 'text',
 }
 
 

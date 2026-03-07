@@ -17,6 +17,7 @@ from .criteria import (
     NewerThanCriterion,
     SubjectCriterion,
     BodyCriterion,
+    TextCriterion,
     HeaderCriterion,
     AndCriterion,
     OrCriterion,
@@ -46,6 +47,7 @@ CRITERION_MAP = {
     'newer-than': NewerThanCriterion,
     'subject': SubjectCriterion,
     'body': BodyCriterion,
+    'text': TextCriterion,
 }
 
 

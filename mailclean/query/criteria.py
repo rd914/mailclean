@@ -250,6 +250,40 @@ class BodyCriterion(Criterion):
         return f"Body({self.pattern_str!r})"
 
 
+class TextCriterion(Criterion):
+    """Match emails by searching all text fields: subject, addresses, and body."""
+
+    def __init__(self, pattern_str: str):
+        self.pattern_str = pattern_str
+        if pattern_str.startswith('/'):
+            pattern, flags = parse_regex_pattern(pattern_str)
+        else:
+            pattern = wildcard_to_regex(pattern_str)
+            flags = 0
+        self.regex = re.compile(pattern, flags)
+
+    def matches(self, email: 'EmailMessage') -> bool:
+        fields = [
+            email.subject,
+            email.from_address,
+            *email.to_addresses,
+            *email.cc_addresses,
+            *email.bcc_addresses,
+        ]
+        if any(self.regex.search(f) for f in fields if f):
+            return True
+        if email.body:
+            return bool(self.regex.search(email.body))
+        return False
+
+    @property
+    def requires_body(self) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return f"Text({self.pattern_str!r})"
+
+
 class HeaderCriterion(Criterion):
     """Match emails by any arbitrary header field."""
 

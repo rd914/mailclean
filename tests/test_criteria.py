@@ -8,7 +8,7 @@ from mailclean.query.criteria import (
     FromCriterion, ToCriterion, CcCriterion, BccCriterion, AddresseeCriterion,
     DateCriterion, BeforeCriterion, AfterCriterion,
     OlderThanCriterion, NewerThanCriterion,
-    SubjectCriterion, BodyCriterion, HeaderCriterion,
+    SubjectCriterion, BodyCriterion, TextCriterion, HeaderCriterion,
     AndCriterion, OrCriterion, NotCriterion,
 )
 
@@ -317,6 +317,52 @@ class TestBodyCriterion:
         email = make_email(body=None)
 
         assert not criterion.matches(email)
+
+
+class TestTextCriterion:
+    """Tests for TextCriterion."""
+
+    def test_matches_subject(self):
+        criterion = TextCriterion("/Gavin Newsom/i")
+        email = make_email(subject="Gavin Newsom needs your support")
+        assert criterion.matches(email)
+
+    def test_matches_from_address(self):
+        criterion = TextCriterion("/Gavin Newsom/i")
+        email = make_email(from_address="Gavin Newsom <campaign@newsom.org>")
+        assert criterion.matches(email)
+
+    def test_matches_to_address(self):
+        criterion = TextCriterion("/susan collins/i")
+        email = make_email(to_addresses=["Susan Collins <susan@senate.gov>"])
+        assert criterion.matches(email)
+
+    def test_matches_body(self):
+        criterion = TextCriterion("/Bernie Sanders/i")
+        email = make_email(body="Senator Bernie Sanders announced today...")
+        assert criterion.matches(email)
+
+    def test_alternation_regex(self):
+        """The primary use case: match any of several names."""
+        criterion = TextCriterion("/Gavin Newsom|Susan Collins|Bernie Sanders/i")
+        assert criterion.matches(make_email(subject="Gavin Newsom for president"))
+        assert criterion.matches(make_email(subject="Susan Collins votes no"))
+        assert criterion.matches(make_email(body="Bernie Sanders spoke today"))
+        assert not criterion.matches(make_email(subject="Weather forecast", body="Sunny skies"))
+
+    def test_no_match(self):
+        criterion = TextCriterion("/Gavin Newsom/i")
+        email = make_email(subject="Newsletter", from_address="news@example.com", body="Nothing political here")
+        assert not criterion.matches(email)
+
+    def test_requires_body(self):
+        criterion = TextCriterion("anything")
+        assert criterion.requires_body
+
+    def test_wildcard_pattern(self):
+        criterion = TextCriterion("*Newsom*")
+        email = make_email(subject="Re: Newsom campaign")
+        assert criterion.matches(email)
 
 
 class TestHeaderCriterion:
