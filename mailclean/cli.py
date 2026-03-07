@@ -231,9 +231,18 @@ def folders():
 @click.option('--folder', '-f', default='INBOX', help='Folder to search in')
 @click.option('--limit', '-l', default=100, help='Maximum results to return')
 @click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
-def search(query: str, folder: str, limit: int, scrub: bool):
+@click.option('--ocr', is_flag=True, help='Run OCR on image attachments to search their text')
+def search(query: str, folder: str, limit: int, scrub: bool, ocr: bool):
     """Search for emails matching a query."""
     config, account, password = get_client_from_config()
+
+    if ocr:
+        from .ocr import check_available
+        try:
+            check_available()
+        except RuntimeError as e:
+            console.print(f"[red]{e}[/red]")
+            return
 
     # Validate query syntax
     try:
@@ -242,7 +251,7 @@ def search(query: str, folder: str, limit: int, scrub: bool):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
-    needs_body = query_requires_body(query)
+    needs_body = query_requires_body(query) or ocr
     needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
@@ -273,7 +282,7 @@ def search(query: str, folder: str, limit: int, scrub: bool):
                             if len(matches) >= limit:
                                 break
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body, include_ocr=ocr):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
@@ -311,9 +320,18 @@ def search(query: str, folder: str, limit: int, scrub: bool):
 @click.option('--folder', '-f', default='INBOX', help='Folder to search in')
 @click.option('--page-size', '-p', default=20, help='Results per page')
 @click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
-def preview(query: str, folder: str, page_size: int, scrub: bool):
+@click.option('--ocr', is_flag=True, help='Run OCR on image attachments to search their text')
+def preview(query: str, folder: str, page_size: int, scrub: bool, ocr: bool):
     """Preview emails matching a query with pagination."""
     config, account, password = get_client_from_config()
+
+    if ocr:
+        from .ocr import check_available
+        try:
+            check_available()
+        except RuntimeError as e:
+            console.print(f"[red]{e}[/red]")
+            return
 
     try:
         criterion = parse_query(query)
@@ -321,7 +339,7 @@ def preview(query: str, folder: str, page_size: int, scrub: bool):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
-    needs_body = query_requires_body(query)
+    needs_body = query_requires_body(query) or ocr
     needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
@@ -350,7 +368,7 @@ def preview(query: str, folder: str, page_size: int, scrub: bool):
                         if criterion.matches(match_target):
                             matches.append(email_msg)
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body, include_ocr=ocr):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
@@ -410,9 +428,18 @@ def preview(query: str, folder: str, page_size: int, scrub: bool):
 @click.option('--yes', '-y', is_flag=True, help='Skip confirmation')
 @click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
 @click.option('--select', '-s', is_flag=True, help='Interactively select emails to delete')
-def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
+@click.option('--ocr', is_flag=True, help='Run OCR on image attachments to search their text')
+def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool, ocr: bool):
     """Delete emails matching a query (moves to MailClean-Deleted)."""
     config, account, password = get_client_from_config()
+
+    if ocr:
+        from .ocr import check_available
+        try:
+            check_available()
+        except RuntimeError as e:
+            console.print(f"[red]{e}[/red]")
+            return
 
     try:
         criterion = parse_query(query)
@@ -420,7 +447,7 @@ def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
-    needs_body = query_requires_body(query)
+    needs_body = query_requires_body(query) or ocr
     needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
@@ -453,7 +480,7 @@ def delete(query: str, folder: str, yes: bool, scrub: bool, select: bool):
                         if criterion.matches(match_target):
                             matches.append(email_msg)
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body, include_ocr=ocr):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)
@@ -939,9 +966,18 @@ def top(folder: str, limit: int, query: Optional[str], scrub: bool):
 @click.option('--output', '-o', required=True, help='Output file path')
 @click.option('--folder', default='INBOX', help='Folder to search in')
 @click.option('--scrub', is_flag=True, help='Normalize text to detect spam obfuscation')
-def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
+@click.option('--ocr', is_flag=True, help='Run OCR on image attachments to search their text')
+def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool, ocr: bool):
     """Export matching emails to CSV or JSON."""
     config, account, password = get_client_from_config()
+
+    if ocr:
+        from .ocr import check_available
+        try:
+            check_available()
+        except RuntimeError as e:
+            console.print(f"[red]{e}[/red]")
+            return
 
     try:
         criterion = parse_query(query)
@@ -949,7 +985,7 @@ def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
         console.print(f"[red]Invalid query: {e.message}[/red]")
         return
 
-    needs_body = query_requires_body(query)
+    needs_body = query_requires_body(query) or ocr
     needs_headers = query_requires_headers(query)
     client = IMAPClient(account.server, account.port, account.email, password)
 
@@ -978,7 +1014,7 @@ def export_cmd(query: str, fmt: str, output: str, folder: str, scrub: bool):
                         if criterion.matches(match_target):
                             matches.append(email_msg)
                 else:
-                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body):
+                    for email_msg in client.fetch_emails(index.get_uids(), include_body=needs_body, include_ocr=ocr):
                         match_target = email_msg.scrubbed() if scrub else email_msg
                         if criterion.matches(match_target):
                             matches.append(email_msg)

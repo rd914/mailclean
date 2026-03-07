@@ -215,7 +215,12 @@ class IMAPClient:
 
         return [int(uid) for uid in data[0].split()]
 
-    def fetch_email(self, uid: int, include_body: bool = False) -> Optional[EmailMessage]:
+    def fetch_email(
+        self,
+        uid: int,
+        include_body: bool = False,
+        include_ocr: bool = False,
+    ) -> Optional[EmailMessage]:
         """Fetch an email by UID."""
         self._check_connection()
 
@@ -223,7 +228,7 @@ class IMAPClient:
             raise IMAPError("No folder selected")
 
         fetch_parts = '(RFC822.HEADER)'
-        if include_body:
+        if include_body or include_ocr:
             fetch_parts = '(RFC822)'
 
         status, data = self._connection.uid('fetch', str(uid), fetch_parts)
@@ -233,13 +238,14 @@ class IMAPClient:
         raw_email = data[0][1]
         msg = email.message_from_bytes(raw_email)
 
-        return self._parse_email(msg, uid, include_body)
+        return self._parse_email(msg, uid, include_body or include_ocr, include_ocr)
 
     def fetch_emails(
         self,
         uids: list[int],
         include_body: bool = False,
-        batch_size: int = 50
+        include_ocr: bool = False,
+        batch_size: int = 50,
     ) -> Iterator[EmailMessage]:
         """Fetch multiple emails by UID in batches."""
         self._check_connection()
@@ -252,7 +258,7 @@ class IMAPClient:
             uid_str = ','.join(str(uid) for uid in batch)
 
             fetch_parts = '(RFC822.HEADER)'
-            if include_body:
+            if include_body or include_ocr:
                 fetch_parts = '(RFC822)'
 
             status, data = self._connection.uid('fetch', uid_str, fetch_parts)
@@ -271,11 +277,11 @@ class IMAPClient:
                 uid = int(uid_match.group(1))
                 raw_email = item[1]
                 msg = email.message_from_bytes(raw_email)
-                parsed = self._parse_email(msg, uid, include_body)
+                parsed = self._parse_email(msg, uid, include_body or include_ocr, include_ocr)
                 if parsed:
                     yield parsed
 
-    def _parse_email(self, msg: email.message.Message, uid: int, include_body: bool) -> EmailMessage:
+    def _parse_email(self, msg: email.message.Message, uid: int, include_body: bool, include_ocr: bool = False) -> EmailMessage:
         """Parse an email.message.Message into an EmailMessage."""
         # Decode subject
         subject = self._decode_header(msg.get('Subject', ''))
@@ -310,6 +316,11 @@ class IMAPClient:
         body = None
         if include_body:
             body = self._get_body(msg)
+            if include_ocr:
+                from .ocr import extract_text_from_message
+                ocr_text = extract_text_from_message(msg)
+                if ocr_text:
+                    body = (body or '') + '\n' + ocr_text
 
         # Get MailClean headers if present
         original_folder = msg.get(MAILCLEAN_HEADER)
